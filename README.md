@@ -1,2 +1,3 @@
-# Internet-Fundamental
-Includes my notes for course Internet Fundamental
+# Computer Networks
+
+Includes my notes for course Computer Networks
