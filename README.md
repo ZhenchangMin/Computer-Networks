@@ -1,3 +1,3 @@
-# Computer Networks
+# Computer Network
 
-Includes my notes for course Computer Networks
+Includes my notes for course Computer Network and Internet
