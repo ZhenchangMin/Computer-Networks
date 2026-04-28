@@ -162,7 +162,160 @@ Web使用了client-server架构，Web服务器总是打开的。
 ---
 
 ### 非持续连接和持续连接
+对于应用程序而言，客户和服务器可能在一个相当长的时间范围内通信，对于客户发出的一系列请求，服务器要对每个请求加以响应。如果每个请求/响应对通过一个**单独的**TCP连接来完成，那么这就是**非持续连接（non-persistent connection）**。
+如果所有的请求/响应对通过一个**相同的**TCP连接来完成，那么这就是**持续连接（persistent connection）**。
 
+下面我们研究对于特定的应用程序HTTP，使用持续连接和非持续连接的优缺点。尽管其默认采用持续连接，但HTTP也支持非持续连接。
+
+#### 采用非持续连接的HTTP
+通过非持续连接，传送一个Web页面的步骤：（假设该页面含有1个html文件和10个图像文件）
+并且假设改html文件的url是`http://www.someschool.edu/someDepartment/home.index`
+1) HTTP客户进程在端口号80发起一个TCP连接到服务器www.someschool.edu的端口号80。客户和服务器上分别有一个套接字与该连接相关联。
+2) HTTP客户通过套接字向服务器发送一个HTTP请求报文（消息）。
+3) HTTP服务器经过他的套接字接受该请求报文，从其存储器中检索出对象`someDepartment/home.index`，在HTTP响应报文中封装该对象，并通过套接字向客户发送响应报文。
+4) HTTP服务器进程通知TCP断开该TCP连接，在TCP确认客户已经完整地收到响应报文之后，才会实际关闭连接。
+5) HTTP客户接收响应报文，TCP连接关闭。客户从报文中提取出html文件并检查。
+6) 对每个引用的jpeg图像文件，客户重复步骤1-5。共10次。
+
+每个TCP连接在服务器发送一个对象后关闭，不为其他对象而持续下来，每个TCP连接只传输**一个**请求报文和响应报文。实际上，所有TCP连接可能不是完全**串行**的，现代浏览器可以同时打开多个TCP连接来**并行**地请求和接收对象，从而缩短响应时间。
+
+HTTP仅定义了HTTP客户程序和服务器程序之间的通信协议，至于浏览器**如何解释**（向用户显示）从服务器接收的对象，HTTP并不关心。
+
+**往返时间**（Round-Trip Time, RTT）是指一个短分组（small packet）从客户到服务器然后再返回客户所花费的时间。
+RTT包括分组传播时延、分组在中间路由器和交换机上的排队时延以及分组处理时延。
+
+如果用户点击超链接：
+三次握手的过程。
+发起TCP连接：一个RTT
+请求文件：一个RTT
+接收到整个文件：文件传输时间
+因此总响应时间是2RTT+HTML文件传输时间
+
+#### 采用持续连接的HTTP
+非持续连接的缺点：
+- 必须为每一个请求的对象建立和维护一个新的TCP连接，增加了开销
+- 每一个对象需要经受两倍的RTT时延，即一个RTT用于创建TCP连接，另一个RTT用于发送HTTP请求和接收HTTP响应
+
+在持续连接中，通常，如果一个连接经过一定时间间隔仍未被使用，就会被HTTP服务器关闭。
+
+### HTTP报文格式（message format）
+HTTP报文有两种：**请求报文**和**响应报文**。
+
+#### HTTP请求报文
+一个简单的典型的HTTP请求报文如下：
+```
+GET /somedir/page.html HTTP/1.1
+Host: www.someschool.edu
+Connection: close
+User-agent: Mozilla/5.0 
+Accept-language: en-us
+```
+该报文是由普通的ASCII文本书写的，有五行，每行以回车和换行符结尾。
+实际上一个请求报文能有更多行或者至少为1行
+
+第一行是**请求行**（request line），包含三个字段：方法（method）、URL和HTTP版本号。
+- 方法字段：指定要执行的操作，如GET、POST、HEAD、PUT、DELETE等，绝大多数采用GET方法
+- URL字段：指定要请求的对象的URL
+- HTTP版本号字段：指定HTTP协议的版本，常见的有HTTP/1.0和HTTP/1.1
+
+请求行后面的是**首部行**（header lines）
+首部行Host: www.someschool.edu 指定了服务器的主机名，HTTP/1.1要求必须有Host首部行
+首部行Connection: close 指定了服务器在发送完响应报文后关闭TCP连接
+首部行User-agent: Mozilla/5.0 指定了客户使用的浏览器类型
+首部行Accept-language: en-us 指定了客户接受的语言类型
+
+看过一个例子之后，一个请求报文的通用格式是在首部行后面还有一个**附加的回车和换行符**，接着有一个实体体（entity body），实体体包含了要发送给服务器的数据，如表单数据等。
+一个实体体的例子
+```
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+Content-Length: 31
+
+<html><h1>Hello</h1></html>
+```
+使用GET的时候，实体体通常是空的；使用POST的时候，实体体包含了要发送的数据（提交的表单），比如用户向搜索引擎输入的关键词。
+
+**表单**就是网页里让用户填写信息并提交的区域，例如搜索框、登录框等。表单数据可以通过HTTP请求报文发送给服务器，服务器根据这些数据进行处理并返回结果。
+值得一提的是并不是用表单生成的请求报文都要用POST方法，GET方法也可以用来提交表单数据，这时表单数据会被编码成URL的一部分，附加在URL字段中，例如：
+```
+GET /cgi-bin/search?monkeys&bananas HTTP/1.1
+```
+
+HEAD方法类似GET方法，但服务器在响应时**不返回实体体**，只返回首部行和状态行。HEAD方法常用于检查某个对象是否存在以及获取对象的元数据（如大小、修改时间等），而不需要下载整个对象。
+
+PUT方法用于将客户提供的数据存储在服务器上指定的位置，DELETE方法用于删除服务器上的指定对象
+
+#### HTTP响应报文
+下面是一个例子，是对上面的请求报文的响应报文：
+```
+HTTP/1.1 200 OK
+Connection: close
+Date: Wed, 22 Jul 2020 19:15:56 GMT
+Server: Apache/2.4.41 (Ubuntu)
+Last-Modified: Wed, 22 Jul 2020 19:15:56 GMT
+Content-Length: 1024
+Content-Type: text/html
+(data, data, data, ...)
+```
+该报文的第一行是**状态行**（status line），包含三个字段：HTTP版本号、状态码和状态短语。
+- HTTP版本号字段：指定HTTP协议的版本，常见的有HTTP/1.0和HTTP/1.1
+- 状态码字段：是一个三位数字，表示服务器对请求的处理结果，常见的状态码有：
+  - 200 OK：请求成功，服务器返回了请求的对象
+  - 301 Moved Permanently：请求的对象被永久移动到新的URL，响应报文中会包含新的URL
+  - 400 Bad Request：请求报文有语法错误，服务器无法理解
+  - 404 Not Found：请求的对象不存在
+  - 505 HTTP Version Not Supported：服务器不支持请求报文中指定的HTTP版本
+
+状态行后面是**首部行**（header lines），然后是**实体体**。
+在这个例子里面有6个首部行：
+- Connection: close 指定了服务器在发送完响应报文后关闭TCP连接
+- Date: 指定了服务器**发送响应报文**的日期和时间，而不是对象创建或者修改的时间
+- Server: 指定了服务器使用的软件类型和版本，类似于HTTP请求报文中的User-agent首部行
+- Last-Modified: 指定了服务器上对象的创建或者最后修改时间
+- Content-Length: 指定了被发送对象的字节数
+- Content-Type: 指定了实体体中的对象的类型，例如text/html表示HTML文件，image/jpeg表示JPEG图片等。
+
+### 用户与服务器的交互：cookie
+cookie允许站点对用户进行跟踪，记录用户的状态信息（如登录状态、购物车内容等），并在用户再次访问时提供个性化的体验。
+cookie技术有4个组件：
+1) 在HTTP响应报文中的一个cookie首部行
+2) 在HTTP请求报文中的一个cookie首部行
+3) 用户端系统中保留的一个cookie文件，由用户的浏览器进行管理
+4) 位于Web站点的一个后端数据库
+
+cookie可以用于标识一个用户。用户初次访问一个站点时，假设是amazon.com，服务器会在HTTP响应报文中包含一个cookie首部行，例如：
+```
+Set-Cookie: 1678
+```
+在这个例子中，服务器为用户分配了一个cookie值1678，并通过Set-Cookie首部行发送给用户的浏览器。用户的浏览器会将这个cookie值保存在本地的cookie文件中。以后，当用户每次访问amazon.com时，浏览器会在每个HTTP请求报文中包含一个cookie首部行，例如：
+```
+Cookie: 1678
+```
+因此服务器就可以通过这个cookie值来识别用户，并提供个性化的服务，例如显示用户的购物车内容、推荐商品等。
+
+### Web缓存
+Web缓存也叫代理服务器（proxy server），是一个**中间服务器**，能够代表初始Web服务器来满足客户的HTTP请求。
+Web缓存器有自己的磁盘存储空间，可以用来存储从Web服务器获取的对象的副本。当一个客户请求一个对象时，假设是`http://www.cnn.com/index.html`，Web缓存器首先检查它的磁盘存储空间中是否有该对象的副本，如果有，就直接返回给客户；如果没有或者副本已经过期，就向`http://www.cnn.com`发出HTTP请求来获取该对象，并将获取到的对象返回给客户，同时将该对象的副本保存在磁盘存储空间中，以便下次请求时可以直接使用。
+
+Web缓存器既是服务器又是客户。Web缓存器可以大大减少对客户请求的响应时间，并且能够减少一个机构的接入链路到因特网的通信量，从而降低机构的网络成本。同时，Web缓存器整体上大大减少了因特网上的Web流量，改善了应用性能。
+
+但是在缓存器里面的对象可能是陈旧的，因此我们可以通过条件GET。
+如果HTTP请求报文使用了GET方法，并且包含了一个If-Modified-Since首部行，例如：
+```
+GET /index.html HTTP/1.1
+If-Modified-Since: Wed, 22 Jul 2020 19:15:56 GMT
+```
+缓存器在缓存对象的同时，也缓存了响应报文中的最后修改日期。通过发送条件GET可以执行最新检查，只有在指定日期之后该对象被修改过，才发送该对象。
+下面是对条件GET请求的响应报文的例子：
+```
+HTTP/1.1 304 Not Modified
+Date: Wed, 22 Jul 2020 19:15:56 GMT
+Server: Apache/2.4.41 (Ubuntu)
+
+(enpty entity body)
+```
+注意这里用了状态码304 Not Modified，表示该对象自指定日期以来没有被修改过，因此缓存器可以继续使用它的副本，而不需要从服务器获取该对象。
+这个响应报文里面没有包含所请求的对象，包含对象只会浪费带宽和增加响应时间。
 
 ## Domain Name Service (DNS)
 
@@ -465,6 +618,7 @@ name域名，type记录类型，value记录的值，ttl生存时间（Time To Li
 互联网上使用最广泛的应用之一。
 
 ### 邮件系统组件
+3个主要组成部分
 
 **User Agent（用户代理）**：
 - 用于撰写、编辑、阅读邮件
@@ -476,7 +630,16 @@ name域名，type记录类型，value记录的值，ttl生存时间（Time To Li
 - **Message queue（消息队列）**：存储待发出的邮件
 - 服务器之间使用 **SMTP** 协议传输邮件
 
+**简单邮件传输协议**（SMTP, Simple Mail Transfer Protocol）是邮件服务器之间传输邮件的应用层协议，使用TCP。
+
 ---
+
+### SMTP
+SMTP用于从发送方的邮件服务器发送报文到接收方的邮件服务器，SMTP是一个**文本协议**，使用TCP端口25。
+SMTP实际上比HTTP问世的早得多，但是他限制所有报文的体部分必须是7-bit ASCII文本，因此SMTP不支持多媒体邮件。后来，MIME（Multipurpose Internet Mail Extensions）协议被引入来扩展SMTP，使其能够支持多媒体邮件。
+
+SMTP一般不使用中间邮件服务器发送邮件。
+
 
 ### 邮件投递的三个阶段（3 Stages of Mail Delivery）
 
@@ -500,19 +663,6 @@ name域名，type记录类型，value记录的值，ttl生存时间（Time To Li
 4. 通过 TCP 连接将邮件发送给 Bob 的邮件服务器
 5. Bob 的邮件服务器将邮件放入 **Bob 的邮箱**
 6. Bob 调用 UA，通过 **POP3** 等协议读取邮件
-
----
-
-### SMTP 协议
-
-- 使用 **TCP，端口 25**
-- **Direct transfer**：直接从 client 传给 server，**无中间存储**
-- 需要邮件头（envelope）：收件人、发件人等信息
-- 服务器会在邮件头中追加路径日志
-
-**注意**：SMTP **不定义邮件消息的格式或内容**：
-- 邮件格式由 **RFC 822** 或 **MIME** 定义
-- 邮件内容必须是 **7-bit ASCII**（MIME 扩展后可支持多媒体）
 
 ---
 
