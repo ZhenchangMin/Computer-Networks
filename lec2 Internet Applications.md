@@ -321,13 +321,16 @@ Server: Apache/2.4.41 (Ubuntu)
 
 ### 为什么需要DNS？
 
-人类喜欢用好记的名字（`www.baidu.com`），但网络通信需要**IP地址**（`119.75.217.109`）。
+人类喜欢用好记的名字（`www.baidu.com`），也就是主机名(hostname)，但网络通信需要**IP地址**（`119.75.217.109`）。
 
 DNS的功能：**将域名映射为IP地址**（domain name → IP address）
 
 ---
 
-### DNS系统设计
+### DNS是什么
+
+DNS是一个**分布式数据库**，由层次化的多个**名字服务器（name servers）**实现
+同时也是一个使得主机能够查询分布式数据库的应用层协议
 
 **为什么不用集中式DNS？**
 集中式，就是所有域名和IP地址映射都存储在一台服务器上：
@@ -346,20 +349,12 @@ DNS的功能：**将域名映射为IP地址**（domain name → IP address）
 - **应用层协议**：DNS本身是应用层协议，用于主机和名字服务器之间通信来"解析"域名
 - **负载均衡**：一个域名可映射多个IP地址（轮询分发）
 
----
-
-### DNS的设计目标（Goals）
-
-| 目标 | 说明 |
-|------|------|
-| **唯一性** | 无命名冲突 |
-| **可扩展性** | 支持海量名字和频繁更新 |
-| **分布式自治管理** | 各机构自主管理自己的名字，无需跟踪全局变化 |
-| **高可用性** | 查询服务随时可用 |
-| **查询快速** | 解析延迟要低 |
-| **完美一致性是非目标** | 允许短暂的不一致（缓存过期等） |
+DNS为因特网应用带来了额外的时延，但是可以通过把ip地址缓存到附近的DNS服务器来降低时延。
+用户主机上的某些应用需要将主机名转换为IP地址的时候，就调用DNS客户端，然后用户主机上的DNS客户端就会向DNS服务器发出查询请求（查询报文），DNS服务器根据DNS协议进行查询并返回结果报文，用户主机上的应用就可以得到IP地址并继续进行通信。
 
 ---
+
+
 
 ### DNS的实现方式：层次化（Hierarchy）
 
@@ -457,7 +452,6 @@ DNS的三种相互交织的层次结构：
 | **Authoritative DNS servers** | 组织自己的DNS服务器，提供该组织内**主机名到IP的权威映射** |
 | **Local Name Servers** | 由ISP/公司/学校维护；主机发出查询时**首先**发到这里 |
 
-// 学到这里了
 
 **关于DNS数据库存储**：
 - 每台服务器只存储整个DNS数据库的一个**小子集**
@@ -468,7 +462,7 @@ DNS的三种相互交织的层次结构：
 
 ---
 
-### Root Name Servers（根名字服务器）
+#### Root Name Servers（根名字服务器）
 
 - 功能：**返回 TLD 服务器的 IP 地址映射**
 - 全球共有 **13 个根名字服务器**（以字母 a–m 命名），每个都有多个副本站点（anycast）
@@ -480,7 +474,7 @@ DNS的三种相互交织的层次结构：
 
 ---
 
-### TLD & Authoritative Servers
+#### TLD & Authoritative Servers
 
 **TLD 服务器（Top-Level Domain Servers）**：
 - 负责 `com`, `org`, `net`, `edu`, `aero`, `jobs`, `museums` 以及所有国家域（`uk`, `fr`, `ca`, `jp`…）
@@ -492,7 +486,7 @@ DNS的三种相互交织的层次结构：
 
 ---
 
-### Local DNS Name Server（本地名字服务器）
+#### Local DNS Name Server（本地名字服务器）
 ISP 是 Internet Service Provider，互联网服务提供商或网络运营商
 ISP 就是“给你提供上网服务”的公司/机构
 
@@ -516,12 +510,15 @@ cis.poly.edu           dns.poly.edu
     │  先访问本地DNS服务器─► │
     │                      │──(2) 查询─本地 DNS 去问根 DNS 服务器─────►│
     │                      │◄─(3) 返回TLD服务器地址──│
-    │                      │──(4) 查询 TLD(.edu)──►TLD DNS
-    │                      │◄─(5) 返回权威服务器────TLD DNS
-    │                      │──(6) 查询权威服务器──►dns.cs.umass.edu
-    │                      │◄─(7) 返回最终IP────────│
+    │                      │──(4) 查询 TLD(.edu)─────►TLD DNS
+    │                      │◄─(5) 返回权威服务器───────TLD DNS
+    │                      │──(6) 查询权威服务器─────►dns.cs.umass.edu
+    │                      │◄─(7) 返回最终IP─────────────│
     │◄─(8) 返回IP──────────│
 ```
+这个过程总共发送了4次查询报文和4个回答报文
+
+
 - Iterated query（迭代查询）：被问到的服务器只告诉你“下一站去哪问”，不替你问到底
 - Host-Server: **recursive** query：主机对本地 DNS 是“递归”期望（你帮我查到底）
 - Server-Server: **iterative** query：DNS **服务器之间**通常是“迭代”方式（一跳一跳指路）
@@ -640,40 +637,12 @@ SMTP实际上比HTTP问世的早得多，但是他限制所有报文的体部分
 
 SMTP一般不使用中间邮件服务器发送邮件。
 
-
-### 邮件投递的三个阶段（3 Stages of Mail Delivery）
-
-| 阶段 | 描述 | 协议 |
-|------|------|------|
-| **1st Stage** | 本地用户代理 → 本地 SMTP 服务器（UA作为SMTP client，本地服务器作为SMTP server） | SMTP |
-| **2nd Stage** | 本地服务器中转 → 远程 SMTP 服务器（本地服务器变为SMTP client） | SMTP |
-| **3rd Stage** | 远程用户代理 → 远程服务器上的邮箱（读取邮件） | POP3 / IMAP4 |
-
-> 邮件格式由 **RFC 822** 或 **MIME** 定义；Stage 1/2 传输用 SMTP，Stage 3 读取用 POP3/IMAP4（或 HTTP）
-
----
-
-### 邮件投递场景（A Mail Delivery Scenario）
-
-以 Alice 发邮件给 Bob（`bob@someschool.edu`）为例：
-
-1. Alice 用 UA 撰写邮件，填写收件人
-2. Alice 的 UA 通过 SMTP 将邮件发到**本地邮件服务器**，放入**消息队列**
-3. Alice 的邮件服务器（SMTP client 侧）与 Bob 的邮件服务器**建立 TCP 连接**
-4. 通过 TCP 连接将邮件发送给 Bob 的邮件服务器
-5. Bob 的邮件服务器将邮件放入 **Bob 的邮箱**
-6. Bob 调用 UA，通过 **POP3** 等协议读取邮件
-
----
-
-### SMTP Transaction（SMTP 事务）
-
 **三个传输阶段**：握手（Handshaking）→ 传输数据 → 关闭连接
 
-**命令/响应交互方式**：
-- Commands：ASCII 文本
-- Response：状态码 + 短语
+客户SMTP在25号端口建立一个到服务器SMTP的TCP连接，一旦连接建立，服务器和客户执行某些应用层的握手，客户指示发送方的邮件地址和接收方的邮件地址，握手之后客户发送邮件报文。
+如果有另外的报文要发送到该服务器，就用同一个TCP连接继续发送，否则关闭连接。
 
+一旦创建了TCP连接，就开始了以下过程：
 ```
 S: 220 hamburger.edu
 C: HELO crepes.fr
@@ -686,6 +655,10 @@ C: RCPT TO: <Johm@hamburger.edu>
 S: 550 No such user here
 C: DATA
 S: 354 Enter mail, end with "." on a line by itself
+C: From: <alice@crepes.fr>
+C: To: <bob@hamburger.edu>
+C: Subject: Dinner plans
+C:
 C: Do you like ketchup?
 C: How about pickles?
 C: .
@@ -693,6 +666,39 @@ S: 250 Message accepted for delivery
 C: QUIT
 S: 221 hamburger.edu closing connection
 ```
+在这个例子里面客户从邮件服务器crepes.fr发出邮件给服务器hamburger.edu，DATA之后先发送邮件首部（From/To/Subject），空行后再发送邮件正文“Do you like ketchup? How about pickles?”。
+客户通过发送一个只包含一个句点的行来表示邮件内容的结束。实际上用ASCII码表示是CRLF.CRLF（回车换行.回车换行）
+如果有多个报文，只在所有报文发送完之后才QUIT。
 
-> 可以用 `telnet servername 25` 手动模拟 SMTP 交互，依次输入 HELO、MAIL FROM、RCPT TO、DATA、QUIT 命令。
+### 邮件投递场景（A Mail Delivery Scenario）
+
+以 Alice 发邮件给 Bob（`bob@someschool.edu`）为例：
+
+1. Alice 用 UA 撰写邮件，填写收件人
+2. Alice 的 UA 通过 SMTP 将邮件发到**本地邮件服务器**，放入**消息队列**
+3. Alice 的邮件服务器（SMTP client 侧）与 Bob 的邮件服务器**建立 TCP 连接**
+4. 通过 TCP 连接将邮件发送给 Bob 的邮件服务器
+5. Bob 的邮件服务器将邮件放入 **Bob 的邮箱**
+6. Bob 调用 UA，通过 **POP3** 等协议读取邮件
+
+### 邮件报文格式
+
+报文包含首部行和报文体两部分，中间用一个空行（回车和换行符）隔开。
+每个首部行由关键词和冒号之后的值组成，某些关键词是必需的：
+- From: 发件人地址
+- To: 收件人地址
+- Subject: 邮件主题
+
+注意这个和SMTP命令不同，尽管有相同的词汇比如from和to，但SMTP命令是客户和服务器之间的通信协议，而邮件报文格式是邮件内容的一部分，SMTP命令中没有Subject字段。
+
+报文首部之后，是一个空白行，然后是邮件的正文内容（报文体）。
+
+### 邮件访问协议
+在邮件报文被交付给Bob的邮件服务器之后，假设Bob在本地主机上用UA来读取邮件，我们当然可以在本地主机上放置一个邮件服务器来存储Bob的邮件，这样Alice的邮件服务器直接把邮件发送给Bob的邮件服务器，Bob的UA就可以直接从本地主机上的邮件服务器读取邮件了。
+但是这样要求Bob的邮件服务器必须24小时在线，不实际，因此我们通常会把Bob的邮件存储在一个**远程邮件服务器**上，这个服务器与其他用户共享，Bob的UA通过网络访问这个远程邮件服务器来读取邮件。
+
+那么Bob的UA是如何访问远程邮件服务器的呢？不能用SMTP，因为SMTP是一个推协议，我们需要一个拉协议
+
+有两种方法：HTTP和IMAP。
+如果Bob使用基于Web的邮件客户端或者手机上的客户端（如Gmail），他就可以通过HTTP协议来访问远程邮件服务器；如果Bob使用传统的邮件客户端（如Outlook），他就可以通过IMAP(Internet Message Access Protocol)协议来访问远程邮件服务器。
 
