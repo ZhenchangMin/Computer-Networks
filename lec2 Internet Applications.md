@@ -481,7 +481,7 @@ DNS的三种相互交织的层次结构：
 - 例：Network Solutions（一个公司） 维护 `.com` TLD 服务器；Educause（一个教育组织） 维护 `.edu` TLD 服务器
 
 **权威 DNS 服务器（Authoritative DNS Servers）**：
-- 组织**自己的** DNS 服务器，提供该组织内主机名到 IP 的**权威映射**
+- **组织的**DNS 服务器，提供该组织内主机名到 IP 的**权威映射**
 - 可由组织自己维护，也可外包给服务商
 
 ---
@@ -518,6 +518,9 @@ cis.poly.edu           dns.poly.edu
 ```
 这个过程总共发送了4次查询报文和4个回答报文
 
+一般来说，TLD并不总是知道权威DNS服务器的IP地址，而是知道中间的某个DNS服务器的地址，最终权威DNS服务器的地址可能需要多跳查询才能得到
+比如dns.umass.edu是一个大学的服务器，学校的每个系都有一个权威DNS服务器，dns.cs.umass.edu是计算机系的权威DNS服务器，dns.umass.edu收到某主机的请求后，可能会告诉该主机去问dns.cs.umass.edu来获取最终IP地址，所以会多发送一次查询报文和一次回答报文
+
 
 - Iterated query（迭代查询）：被问到的服务器只告诉你“下一站去哪问”，不替你问到底
 - Host-Server: **recursive** query：主机对本地 DNS 是“递归”期望（你帮我查到底）
@@ -525,7 +528,7 @@ cis.poly.edu           dns.poly.edu
 
 1.请求主机 cis.poly.edu 先问本地 DNS 服务器 dns.poly.edu
 2.本地 DNS 去问根 DNS 服务器
-3.根 DNS 不给最终 IP，只返回“去问哪个 .edu 的 TLD 服务器”
+3.根 DNS 不给最终 IP，只返回“去问 .edu 的 TLD 服务器”
 4.本地 DNS 再去问 .edu 的 TLD DNS 服务器
 5.TLD DNS 返回“负责 umass.edu 的权威 DNS 服务器地址”（dns.cs.umass.edu）
 6.本地 DNS 去问权威 DNS 服务器
@@ -541,12 +544,12 @@ DNS 数据库中的条目称为 **Resource Record（RR）**，资源记录。格
 ```
 RR format: (name, value, type, ttl)
 ```
-name域名，type记录类型，value记录的值，ttl生存时间（Time To Live）
+ntype记录类型，ttl生存时间（Time To Live），name和value的含义根据type不同而不同
 
 常见的type类型：
 | type | name | value |
 |------|------|-------|
-| **A** | 主机名 | IPv4 地址 |
+| **A** | 主机名 | IP 地址 |
 | **NS** | 域名 | 该域权威 DNS 服务器的主机名 |
 | **CNAME** | 别名（alias） | 规范主机名（canonical name） |
 | **MX** | 域名 | 该域邮件服务器的主机名 |
@@ -554,6 +557,8 @@ name域名，type记录类型，value记录的值，ttl生存时间（Time To Li
 **例子**：
 - `(networkutopia.com, dns1.networkutopia.com, NS, 32768)` — NS记录，指向权威服务器，说明`networkutopia.com`的DNS服务器是`dns1.networkutopia.com`
 - `(dns1.networkutopia.com, 212.212.212.1, A, 5600)` — A记录，给出IP地址，说明`dns1.networkutopia.com`的IP地址是`212.212.212.1`
+
+如果一个DNS服务器是某个特定主机名的权威服务器，那么它会在DNS数据库中存储一个A记录（如果不是，也可能会有一个缓存的A记录）；如果不是，那么它会储存一个NS记录，指向负责该主机名的**权威DNS服务器**的主机名，还有一个A记录，记录权威DNS服务器的IP地址。
 
 ---
 
@@ -588,6 +593,9 @@ name域名，type记录类型，value记录的值，ttl生存时间（Time To Li
   - DNS 服务器缓存收到的查询响应
   - 响应中含有 **TTL（Time To Live）**字段
   - TTL 到期后，服务器**删除缓存条目**（可能短暂不一致）
+
+向本地DNS服务器发出查询时，如果本地DNS服务器的缓存中有该域名的IP地址，并且该缓存条目的TTL没有过期，那么本地DNS服务器就会直接返回该IP地址给请求主机，尽管并不是权威DNS服务器返回的结果，但由于TTL没有过期，所以该结果仍然是有效的。
+不必访问其他DNS服务器来获取该域名的IP地址。
 
 ---
 
@@ -702,3 +710,20 @@ S: 221 hamburger.edu closing connection
 有两种方法：HTTP和IMAP。
 如果Bob使用基于Web的邮件客户端或者手机上的客户端（如Gmail），他就可以通过HTTP协议来访问远程邮件服务器；如果Bob使用传统的邮件客户端（如Outlook），他就可以通过IMAP(Internet Message Access Protocol)协议来访问远程邮件服务器。
 
+## 内容分发网
+对于互联网视频公司而言，建立数据中心来存储其所有视频是显然的。但是：
+- 如果客户远离数据中心，访问视频的时延会很大
+- 视频很可能经过相同的通信链路发送许多次
+- 如果单个数据中心宕机，所有客户都无法访问视频
+
+**内容分发网络（Content Distribution Network, CDN）**：在全球范围内部署**多个服务器**来存储视频内容的**副本**，客户就近访问这些服务器来获取视频内容，从而降低访问时延和通信成本，并提高服务的可靠性。
+CDN可以是专用的，也可以是第三方提供的服务，例如Akamai、Cloudflare等。
+
+CDN通常有两种服务器安置原则
+- 深入：在遍及全球的接入ISP中部署服务器集群来深入到ISP接入网中
+- 邀请做客：在少量关键位置建造大集群来服务大量客户
+
+### CDN操作
+当用户检索一个特定的视频，CDN截获该请求，随后：
+1. 确定此时适合该客户的CDN服务器集群
+2. 请求重定向到该集群的某服务器
