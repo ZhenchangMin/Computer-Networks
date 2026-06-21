@@ -525,3 +525,9 @@ TCP如何确定发送的速率？
 ![1782026282693](image/lec3TransferLayer/1782026282693.png)
 忽略慢启动阶段，如果丢包由3个冗余ACK指示而不是超时，那么每个RTT内cwnd线性增加，直到出现3个冗余ACK之后减半，所以TCP拥塞控制常常被称为**加性增，乘性减**（Additive Increase, Multiplicative Decrease, AIMD）拥塞控制方式
 ![1782026384832](image/lec3TransferLayer/1782026384832.png)
+
+#### 明确拥塞通告
+明确拥塞通告Explicit Congestion Notification (ECN)，涉及TCP和IP
+有两个bit，在IP数据报中
+有一种ECN bit表示该路由器正在经历拥塞，由Ip数据报携带，送给目的主机，再由目的主机通知发送主机
+收到拥塞指示之后，接收方的ACK报文段中的ECE(ECN echo, ECN回显)位被置为1，发送方收到这个ACK之后就知道网络拥塞了，就减半cwnd
